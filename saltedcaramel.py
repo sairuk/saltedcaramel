@@ -5,6 +5,7 @@
 ###########################################################
 # sickbeard, rsync exclude script
 #
+# v03 add SickRage support
 # v02 complete rewrite after death of r01
 # v01 wizardry
 #
@@ -21,7 +22,7 @@ from url import URLHandler
 
 appname = 'Salted Caramel'
 appsht = 'saltedcaramel'
-appver = "0.0.2"
+appver = "0.0.3"
 
 
 def wrtlog(s):
@@ -48,6 +49,7 @@ def main():
         sb_port = config.get('sickbeard', 'sb_port')
         sb_path = config.get('sickbeard', 'sb_path')
         sb_dbloc = config.get('sickbeard', 'sb_dbloc')
+        sb_method = config.get('sickbeard', 'sb_method')
 
         ### kodi settings
         kodi_ip = config.get('kodi', 'kodi_ip')
@@ -103,8 +105,26 @@ def main():
     ## read db
     #<showid>.S<season>E<episode>.<name>.*
     if debug: wrtlog("Extract episode information from SickBeard")
-    #SELECT tv_shows.show_name, tv_episodes.season, tv_episodes.episode, tv_episodes.name FROM tv_episodes INNER JOIN tv_shows ON tv_episodes.showid = tv_shows.tvdb_id WHERE tv_episodes.status != 3
-    result = db.execSQL("SELECT tv_shows.show_name, tv_episodes.season, tv_episodes.episode, tv_episodes.name FROM tv_episodes INNER JOIN tv_shows ON tv_episodes.showid = tv_shows.tvdb_id WHERE tv_episodes.status != 3", db.cursor())
+    version = db.execSQL("SELECT db_version FROM db_version", db.cursor())
+    sbsql = False
+    sbsrtitle = ""
+    sbsrcol = False
+    if version <= 18:
+       sbsrtitle = "SickBeard"
+       sbsrcol = "tvdb_id"
+    else:
+       sbsrtitle = "SickRage"
+       sbsrcol = "indexer_id"
+
+    sbsql = "SELECT tv_shows.show_name, tv_episodes.season, tv_episodes.episode, tv_episodes.name FROM tv_episodes INNER JOIN tv_shows ON tv_episodes.showid = tv_shows.%s WHERE tv_episodes.status != 3" % sbsrcol
+    if sbsql:
+       try:
+           result = db.execSQL(sbsql, db.cursor())
+       except sqlite3.OperationalError as e:
+           print "SQLite Error: %s:" % e
+    else:
+       print "SQL wasn't populated"
+       exit()
 
     ## convert strings for rsync
     if debug: wrtlog("Convert results string to rsync case-insentive compatible strings")
@@ -143,13 +163,27 @@ def main():
     p.communicate()
 
     ## update sickbeard
-    if debug: wrtlog("Asking SickBeard to update")
-    sb = url.posturl('http://%s:%s//home/postprocess/processEpisode/?dir=%s' % (sb_ip, sb_port, sb_path))
+    if debug: wrtlog("Asking %s to update" % sbsrtitle )
+
+    sbargs = False
+    if version <= 18:
+        sb_args = "dir=%s" % sb_path
+    else:
+        sb_args = "proc_dir=%s&process_method=%s" % ( sb_path, sb_method )
+
+    sb_url = 'http://%s:%s/home/postprocess/processEpisode/?%s' % (sb_ip, sb_port, sb_args)
+    if debug: wrtlog("URL: %s" % sb_url)
+
+    sb = url.posturl(sb_url)
     if debug: wrtlog(sb)
 
     ## update kodi
     if debug: wrtlog("Asking Kodi to update")
-    ko = url.posturl('http://%s:%s/jsonrpc?request=\{"jsonrpc":"2.0","method":"VideoLibrary.Scan"\}' % (kodi_ip, kodi_port))
+
+    kodi_url = 'http://%s:%s/jsonrpc?request=\{"jsonrpc":"2.0","method":"VideoLibrary.Scan"\}' % (kodi_ip, kodi_port)
+    if debug: wrtlog("URL: %s" % kodi_url)
+
+    ko = url.posturl(kodi_url)
     if debug: wrtlog(ko)
 
     return

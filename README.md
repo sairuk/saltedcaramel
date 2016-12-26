@@ -1,10 +1,10 @@
 # saltedcaramel
 
-* A Sickbeard<=>rsync combination *
+* A Sickbeard/SickRage<=>rsync combination *
 
-Combine Sickbeard with the power of Rsync, builds exclude files from local data.
+Combine Sickbeard/SickRage with the power of Rsync, builds exclude files from local data.
 
-Edit the ~/.sickbeard/saltedcaramel.conf
+Edit the ~/.saltedcaramel/saltedcaramel.conf
 
 
 

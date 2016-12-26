@@ -3,6 +3,7 @@ sb_ip = 192.168.1.1
 sb_port = 8081
 sb_path = /path/to/sickbeard/library
 sb_dbloc = /path/to/sickbeard/sickbeard.db
+sb_method = copy
 
 [kodi]
 kodi_ip = 192.168.1.1
@@ -18,5 +19,5 @@ rs_dest = /local/drive/
 rs_params = -ruzk
 
 [general]
-debug = True
+debug = False
 dryrun = True
