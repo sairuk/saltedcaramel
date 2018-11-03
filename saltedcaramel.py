@@ -15,6 +15,7 @@
 import os
 import shutil
 import ConfigParser
+import datetime
 from subprocess import Popen
 from db import SQLHandler
 from rsync import RsyncHandler
@@ -22,11 +23,10 @@ from url import URLHandler
 
 appname = 'Salted Caramel'
 appsht = 'saltedcaramel'
-appver = "0.0.3"
-
+appver = "0.0.4"
 
 def wrtlog(s):
-    print s
+    print "[%s] %s" % (str(datetime.datetime.now()),s)
     return
 
 def wrtEmpty(f):
@@ -45,21 +45,26 @@ def main():
         config.read(conf_file)
 
         ### sickbeard settings
+        sb_run = config.getboolean('sickbeard', 'sb_run')
         sb_ip = config.get('sickbeard', 'sb_ip')
         sb_port = config.get('sickbeard', 'sb_port')
         sb_path = config.get('sickbeard', 'sb_path')
         sb_dbloc = config.get('sickbeard', 'sb_dbloc')
         sb_method = config.get('sickbeard', 'sb_method')
+        sb_api_key = config.get('sickbeard', 'sb_api_key')
 
         ### kodi settings
+        kodi_run = config.getboolean('kodi', 'kodi_run')
         kodi_ip = config.get('kodi', 'kodi_ip')
         kodi_port = config.get('kodi', 'kodi_port')
         kodi_user = config.get('kodi', 'kodi_user')
         kodi_pass = config.get('kodi', 'kodi_pass')
 
         ### rsync settings
+        rs_run = config.getboolean('rsync', 'rs_run')
         rs_exclude_file = os.path.join(conf_dir, config.get('rsync', 'rs_exclude_file'))
         rs_local_exclude_file = os.path.join(conf_dir, config.get('rsync', 'rs_local_exclude_file'))
+        rs_use_titles = config.getboolean('rsync', 'rs_use_titles')
         rs_source = config.get('rsync', 'rs_source')
         rs_dest = config.get('rsync', 'rs_dest')
         rs_params = config.get('rsync', 'rs_params')
@@ -105,7 +110,9 @@ def main():
     ## read db
     #<showid>.S<season>E<episode>.<name>.*
     if debug: wrtlog("Extract episode information from SickBeard")
-    version = db.execSQL("SELECT db_version FROM db_version", db.cursor())
+    version_data = db.execSQL("SELECT db_version FROM db_version", db.cursor())
+    for row in version_data:
+        version = row[0]
     sbsql = False
     sbsrtitle = ""
     sbsrcol = False
@@ -113,10 +120,13 @@ def main():
        sbsrtitle = "SickBeard"
        sbsrcol = "tvdb_id"
     else:
-       sbsrtitle = "SickRage"
+       sbsrtitle = "SickRage/SickGear"
        sbsrcol = "indexer_id"
+    if rs_use_titles:
+        sbsql = "SELECT tv_shows.show_name, tv_episodes.season, tv_episodes.episode, tv_episodes.name FROM tv_episodes INNER JOIN tv_shows ON tv_episodes.showid = tv_shows.%s WHERE tv_episodes.status != 3" % sbsrcol
+    else:
+        sbsql = "SELECT tv_shows.show_name, tv_episodes.season, tv_episodes.episode FROM tv_episodes INNER JOIN tv_shows ON tv_episodes.showid = tv_shows.%s WHERE tv_episodes.status != 3" % sbsrcol
 
-    sbsql = "SELECT tv_shows.show_name, tv_episodes.season, tv_episodes.episode, tv_episodes.name FROM tv_episodes INNER JOIN tv_shows ON tv_episodes.showid = tv_shows.%s WHERE tv_episodes.status != 3" % sbsrcol
     if sbsql:
        try:
            result = db.execSQL(sbsql, db.cursor())
@@ -130,7 +140,11 @@ def main():
     if debug: wrtlog("Convert results string to rsync case-insentive compatible strings")
     rsync_set = []
     for row in result:
-        rsync_set.append(rsync.buildExcludeString(row))
+        if rs_use_titles:
+            rsync_set.append(rsync.buildExcludeString(row))
+        else:
+            row = row + ('',)
+            rsync_set.append(rsync.buildExcludeString(row))
     ## write exclude file
     if debug: wrtlog("Write rsync exclude file")
     rsync.writeExcludeFile(rsync_set, rs_exclude_file)
@@ -138,7 +152,7 @@ def main():
     ## if is dryrun we want to dry-run rsync
     if debug: wrtlog("This is a dryrun: %s" % dryrun)
     if dryrun:
-        rsync.params = "--dry-run " + rs_params
+        rs_params = "--dry-run " + rs_params
         if debug: wrtlog("Amended runtime params: %s" % rs_params)
 
     ## build rsync exec string
@@ -159,32 +173,41 @@ def main():
 
     ## execute rsync
     if debug: wrtlog("Executing rsync with: %s" % rsync_exec)
-    p = Popen([rsync_exec], shell=True)
-    p.communicate()
+    if rs_run:
+        p = Popen([rsync_exec], shell=True)
+        p.communicate()
 
-    ## update sickbeard
-    if debug: wrtlog("Asking %s to update" % sbsrtitle )
+    if sb_run:
+        ## update sickbeard
+        if debug: wrtlog("Asking %s to update" % sbsrtitle )
 
-    sbargs = False
-    if version <= 18:
-        sb_args = "dir=%s" % sb_path
-    else:
-        sb_args = "proc_dir=%s&process_method=%s" % ( sb_path, sb_method )
+        sbargs = False
+        if version <= 18:
+            # sickbeard
+            sb_args = "home/postprocess/processEpisode/?dir=%s" % sb_path
+        if version == 20010:
+            # sickgear
+            sb_args = "api/%s/?cmd=sg.postprocess&path=%s&process_method=%s" % (sb_api_key, sb_path, sb_method)
+        else:
+            # sickrage
+            #sb_args = "home/postprocess/processEpisode/?proc_dir=%s&process_method=%s" % ( sb_path, sb_method )
+            sb_args = "home/postprocess/processEpisode/?proc_dir=%s&process_method=%s&is_priority=on&delete_on=on&force_next=on" % ( sb_path, sb_method )
 
-    sb_url = 'http://%s:%s/home/postprocess/processEpisode/?%s' % (sb_ip, sb_port, sb_args)
-    if debug: wrtlog("URL: %s" % sb_url)
+        sb_url = 'http://%s:%s/%s' % (sb_ip, sb_port, sb_args)
+        if debug: wrtlog("URL: %s" % sb_url)
 
-    sb = url.posturl(sb_url)
-    if debug: wrtlog(sb)
+        sb = url.posturl(sb_url)
+        if debug: wrtlog(sb)
 
     ## update kodi
-    if debug: wrtlog("Asking Kodi to update")
+    if kodi_run:
+        if debug: wrtlog("Asking Kodi to update")
 
-    kodi_url = 'http://%s:%s/jsonrpc?request=\{"jsonrpc":"2.0","method":"VideoLibrary.Scan"\}' % (kodi_ip, kodi_port)
-    if debug: wrtlog("URL: %s" % kodi_url)
+        kodi_url = 'http://%s:%s/jsonrpc?request=\{"jsonrpc":"2.0","method":"VideoLibrary.Scan"\}' % (kodi_ip, kodi_port)
+        if debug: wrtlog("URL: %s" % kodi_url)
 
-    ko = url.posturl(kodi_url)
-    if debug: wrtlog(ko)
+        ko = url.posturl(kodi_url)
+        if debug: wrtlog(ko)
 
     return
 

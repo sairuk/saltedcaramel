@@ -1,22 +1,27 @@
 [sickbeard]
+sb_run = True
 sb_ip = 192.168.1.1
 sb_port = 8081
 sb_path = /path/to/sickbeard/library
 sb_dbloc = /path/to/sickbeard/sickbeard.db
 sb_method = copy
+sb_api_key = apikey
 
 [kodi]
+kodi_run = True
 kodi_ip = 192.168.1.1
 kodi_port = 8080
 kodi_user = kodi
 kodi_pass =
 
 [rsync]
+rs_run = True
 rs_exclude_file = sickbeard.exclude
 rs_local_exclude_file = local.exclude
+rs_use_titles = False
 rs_source = -e 'ssh' 'to@somewhere:~/remote/drive'
 rs_dest = /local/drive/
-rs_params = -ruzk
+rs_params = -ruzkL
 
 [general]
 debug = False

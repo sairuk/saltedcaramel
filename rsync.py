@@ -22,7 +22,8 @@ class RsyncHandler(object):
         self.cmd = '/usr/bin/rsync'
         self.exclude = "--exclude-from"
         self.fn_blacklist = ['.','/',":","(",")","`","'","",'"',",","’","?",'“','”']
-        self.fn_whitelist = ["0","1","2","3","4","5","6","7","8","9"," ",'-']
+        self.fn_greylist = ['-','!']
+        self.fn_whitelist = ["0","1","2","3","4","5","6","7","8","9"," "]
 
     def encodeChar(self, c, enc="utf-8"):
         return c.encode(enc)
@@ -40,6 +41,8 @@ class RsyncHandler(object):
                 pass
             elif c in self.fn_whitelist:
                 charlist.append(c)
+            elif c in self.fn_greylist:
+                charlist.append("[%s]" % c)
             else:
                 charlist.append("[%s%s]" % (self.encodeChar(c.upper()), self.encodeChar(c.lower())))
         return "".join(charlist)

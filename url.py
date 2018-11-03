@@ -13,9 +13,9 @@ class URLHandler(object):
         try:
             resp = urllib2.urlopen(req).getcode()
         except urllib2.URLError as e:
-            resp = e.reason
-        if resp == 200:
-            return "Success"
-        else:
-            return "[ERROR] response was: %s" % resp
+            e.code = 404;
+            if e.code == 200:
+                return "Success"
+            else:
+                return "[ERROR] response was: %s-%s" % (e.code, e.reason)
         return
